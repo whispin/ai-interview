@@ -1,0 +1,219 @@
+# AI Interview Assistant Configuration Example
+# 配置示例文件 - 包含常见使用场景的配置示例
+
+# ========================================
+# 场景 1: 使用腾讯云 ASR + OpenAI GPT-4
+# ========================================
+
+app:
+  name: interview-ai
+  environment: production
+
+audio:
+  sample_rate: 16000
+  chunk_duration: 100ms
+  max_buffer: 10s
+  silence_duration: 800ms
+  silence_threshold: 0.2
+  queue_size: 20
+  default_channels: 1
+  device_hints:
+    speaker_keywords:
+      - blackhole
+      - loopback
+      - virtual
+      - aggregate
+    microphone_keywords:
+      - microphone
+      - built-in
+      - usb
+
+pipeline:
+  max_consecutive_errors: 5
+  stats_interval: 30s
+
+asr:
+  active: tencent
+
+  tencent:
+    secret_id: "YOUR_TENCENT_SECRET_ID"
+    secret_key: "YOUR_TENCENT_SECRET_KEY"
+    app_id: "YOUR_APP_ID"
+    region: ap-shanghai
+    engine_model_type: 16k_zh
+
+llm:
+  active: openai
+  system_prompt: "你是一个专业的面试助手，需要帮助候选人生成结构化、专业的回答。请根据面试问题提供清晰、有条理的建议。"
+
+  providers:
+    openai:
+      kind: openai
+      api_key: "YOUR_OPENAI_API_KEY"
+      model: gpt-4
+      base_url: https://api.openai.com/v1
+      temperature: 0.7
+      max_tokens: 2000
+
+cli:
+  enable_hotkey: true
+  hotkey: ctrl+v
+
+gui:
+  auto_start_asr: false
+  width: 1400
+  height: 800
+
+logging:
+  level: info
+  encoding: console
+  development: false
+
+# ========================================
+# 场景 2: 使用 OpenAI Whisper ASR + 自定义 LLM
+# ========================================
+
+# app:
+#   name: interview-ai
+#   environment: development
+#
+# audio:
+#   sample_rate: 16000
+#   chunk_duration: 100ms
+#   max_buffer: 10s
+#   silence_duration: 800ms
+#   silence_threshold: 0.2
+#   queue_size: 20
+#   default_channels: 1
+#
+# pipeline:
+#   max_consecutive_errors: 5
+#   stats_interval: 30s
+#
+# asr:
+#   active: openai_whisper
+#
+#   openai_whisper:
+#     api_key: "YOUR_OPENAI_API_KEY"
+#     model: whisper-1
+#     base_url: https://api.openai.com/v1
+#     language: zh
+#     temperature: 0
+#     timeout: 30s
+#
+# llm:
+#   active: custom
+#   system_prompt: "你是一个专业的面试助手。"
+#
+#   providers:
+#     custom:
+#       kind: openai-compatible
+#       api_key: "YOUR_CUSTOM_API_KEY"
+#       model: gpt-4
+#       base_url: https://your-custom-endpoint.com/v1
+#       temperature: 0.7
+#       max_tokens: 2000
+#       headers:
+#         - key: "X-Custom-Auth"
+#           value: "your-auth-token"
+#
+# cli:
+#   enable_hotkey: true
+#   hotkey: ctrl+shift+v
+#
+# gui:
+#   auto_start_asr: true
+#   width: 1600
+#   height: 900
+#
+# logging:
+#   level: debug
+#   encoding: json
+#   development: true
+
+# ========================================
+# 场景 3: 使用自定义 HTTP ASR 服务
+# ========================================
+
+# app:
+#   name: interview-ai
+#   environment: production
+#
+# audio:
+#   sample_rate: 16000
+#   chunk_duration: 100ms
+#   max_buffer: 10s
+#   silence_duration: 1s
+#   silence_threshold: 0.15
+#   queue_size: 30
+#   default_channels: 1
+#
+# pipeline:
+#   max_consecutive_errors: 10
+#   stats_interval: 60s
+#
+# asr:
+#   active: http
+#
+#   http:
+#     endpoint: https://your-asr-service.com/api/recognize
+#     auth_header: Authorization
+#     auth_value: "Bearer YOUR_TOKEN"
+#     result_json_path: ["data", "text"]
+#     timeout: 15s
+#
+# llm:
+#   active: openai
+#   system_prompt: "你是一个专业的面试助手。"
+#
+#   providers:
+#     openai:
+#       kind: openai
+#       api_key: "YOUR_OPENAI_API_KEY"
+#       model: gpt-3.5-turbo
+#       base_url: https://api.openai.com/v1
+#       temperature: 0.8
+#       max_tokens: 1500
+#
+# cli:
+#   enable_hotkey: false
+#   hotkey: ""
+#
+# gui:
+#   auto_start_asr: true
+#   width: 1200
+#   height: 700
+#
+# logging:
+#   level: warn
+#   encoding: console
+#   development: false
+
+# ========================================
+# 配置说明
+# ========================================
+
+# ASR 提供商选择:
+# - tencent: 腾讯云语音识别 (适合中文，高质量)
+# - openai_whisper: OpenAI Whisper (多语言支持，准确度高)
+# - http: 自定义 HTTP ASR 服务 (灵活集成)
+
+# LLM 提供商类型:
+# - openai: OpenAI 官方 API
+# - openai-compatible: OpenAI 兼容接口 (如 Azure OpenAI, 本地部署模型等)
+
+# 音频参数调优建议:
+# - silence_duration: 增加此值可减少误判断为结束的情况
+# - silence_threshold: 降低此值可提高静音检测灵敏度
+# - chunk_duration: 通常保持 100ms，不建议修改
+
+# 日志级别:
+# - debug: 详细调试信息 (开发环境)
+# - info: 常规运行信息 (生产环境推荐)
+# - warn: 警告信息
+# - error: 仅错误信息
+
+# 环境变量覆盖示例:
+# export INTERVIEW_AI_ASR__TENCENT__SECRET_ID="your_secret_id"
+# export INTERVIEW_AI_LLM__PROVIDERS__OPENAI__API_KEY="your_api_key"
+# export INTERVIEW_AI_LOGGING__LEVEL="debug"
