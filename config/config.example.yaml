@@ -45,6 +45,7 @@ asr:
 llm:
   active: openai
   system_prompt: "你是一个专业的面试助手，需要帮助候选人生成结构化、专业的回答。请根据面试问题提供清晰、有条理的建议。"
+  context_messages: 3  # 发送给AI的历史对话条数 (0-10, 建议3-5)
 
   providers:
     openai:

@@ -57,15 +57,18 @@ func NewMessageBubble(msg Message) *MessageBubble {
 	case MessageTypeInterviewer:
 		iconResource = theme.AccountIcon()
 		name = "面试官"
-		bgColor = color.NRGBA{R: 230, G: 247, B: 255, A: 255} // 浅蓝色
+		// Modern gradient-inspired blue with transparency
+		bgColor = color.NRGBA{R: 59, G: 130, B: 246, A: 25}
 	case MessageTypeUser:
 		iconResource = theme.AccountIcon()
 		name = "我"
-		bgColor = color.NRGBA{R: 240, G: 240, B: 240, A: 255} // 浅灰色
+		// Subtle slate with transparency for glass effect
+		bgColor = color.NRGBA{R: 71, G: 85, B: 105, A: 40}
 	case MessageTypeSystem:
 		iconResource = theme.InfoIcon()
 		name = "系统"
-		bgColor = color.NRGBA{R: 255, G: 250, B: 230, A: 255} // 浅黄色
+		// Amber accent with transparency
+		bgColor = color.NRGBA{R: 245, G: 158, B: 11, A: 20}
 	}
 
 	bubble.icon = widget.NewIcon(iconResource)
@@ -82,7 +85,7 @@ func NewMessageBubble(msg Message) *MessageBubble {
 	bubble.textLabel.Wrapping = fyne.TextWrapWord
 
 	bubble.background = canvas.NewRectangle(bgColor)
-	bubble.background.CornerRadius = 8
+	bubble.background.CornerRadius = 12 // Increased corner radius for modern look
 
 	// 创建布局
 	header := container.NewHBox(

@@ -82,9 +82,10 @@ type OpenAIWhisperConfig struct {
 
 // LLMSection 描述多种 LLM 提供商。
 type LLMSection struct {
-	Active       string                       `koanf:"active"`
-	SystemPrompt string                       `koanf:"system_prompt"`
-	Providers    map[string]LLMProviderConfig `koanf:"providers"`
+	Active          string                       `koanf:"active"`
+	SystemPrompt    string                       `koanf:"system_prompt"`
+	ContextMessages int                          `koanf:"context_messages"` // 发送的历史对话条数
+	Providers       map[string]LLMProviderConfig `koanf:"providers"`
 }
 
 // LLMProviderConfig 统一描述 OpenAI 兼容与其它厂商的配置。

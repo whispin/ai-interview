@@ -32,20 +32,29 @@ func main() {
 
 func run() error {
 	var cfgFiles []string
+	var searchPaths []string
 	var envPrefix string
+	var verbose bool
+	var allowMissing bool
 
 	fs := pflag.NewFlagSet("interview-ai-cli", pflag.ContinueOnError)
-	fs.StringArrayVarP(&cfgFiles, "config", "c", nil, "指定额外的配置文件 (可重复)")
-	fs.StringVar(&envPrefix, "env-prefix", "INTERVIEW_AI_", "覆盖环境变量前缀")
+	fs.StringArrayVarP(&cfgFiles, "config", "c", nil, "指定配置文件路径 (可重复，后面的覆盖前面的)")
+	fs.StringArrayVarP(&searchPaths, "config-path", "p", nil, "配置文件搜索路径 (可重复)")
+	fs.StringVar(&envPrefix, "env-prefix", "INTERVIEW_AI_", "环境变量前缀")
+	fs.BoolVarP(&verbose, "verbose", "v", false, "显示详细配置加载信息")
+	fs.BoolVar(&allowMissing, "allow-missing-config", false, "允许配置文件不存在")
 
 	if err := fs.Parse(os.Args[1:]); err != nil {
 		return err
 	}
 
 	cfg, err := config.Load(config.Options{
-		ConfigFiles: cfgFiles,
-		FlagSet:     fs,
-		EnvPrefix:   envPrefix,
+		ConfigFiles:  cfgFiles,
+		SearchPaths:  searchPaths,
+		FlagSet:      fs,
+		EnvPrefix:    envPrefix,
+		Verbose:      verbose,
+		AllowMissing: allowMissing,
 	})
 	if err != nil {
 		return err
