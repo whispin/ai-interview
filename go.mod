@@ -16,6 +16,8 @@ require (
 	github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/asr v1.1.29
 	github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common v1.1.43
 	go.uber.org/zap v1.27.0
+	golang.org/x/sys v0.20.0
+	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (
@@ -51,7 +53,5 @@ require (
 	golang.org/x/image v0.18.0 // indirect
 	golang.org/x/mobile v0.0.0-20231127183840-76ac6878050a // indirect
 	golang.org/x/net v0.25.0 // indirect
-	golang.org/x/sys v0.20.0 // indirect
 	golang.org/x/text v0.16.0 // indirect
-	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

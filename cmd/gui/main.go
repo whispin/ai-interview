@@ -44,9 +44,38 @@ var captureOptions = []struct {
 
 func main() {
 	if err := run(); err != nil {
+		// 在 Windows GUI 模式下，stderr 不可见，需要显示错误对话框
+		// In Windows GUI mode, stderr is invisible, need to show error dialog
+		showStartupError(err)
 		fmt.Fprintf(os.Stderr, "❌ GUI 启动失败: %v\n", err)
 		os.Exit(1)
 	}
+}
+
+// showStartupError 显示启动错误对话框（适用于 Windows GUI 模式）
+// Show startup error dialog (for Windows GUI mode)
+func showStartupError(err error) {
+	// 创建临时应用显示错误
+	// Create temporary app to show error
+	app := fyneApp.New()
+	window := app.NewWindow("启动失败 - Interview AI")
+
+	errorMsg := fmt.Sprintf("应用启动失败:\n\n%v\n\n可能的原因:\n1. 配置文件缺失或格式错误\n2. 系统依赖缺失\n3. 权限不足\n\n请查看日志文件或使用 --verbose 参数运行", err)
+
+	content := container.NewVBox(
+		widget.NewLabel("❌ 启动错误"),
+		widget.NewSeparator(),
+		widget.NewLabel(errorMsg),
+		widget.NewSeparator(),
+		widget.NewButton("退出", func() {
+			app.Quit()
+		}),
+	)
+
+	window.SetContent(container.NewPadded(content))
+	window.Resize(fyne.NewSize(500, 300))
+	window.CenterOnScreen()
+	window.ShowAndRun()
 }
 
 func run() error {
@@ -61,20 +90,23 @@ func run() error {
 	fs.StringArrayVarP(&searchPaths, "config-path", "p", nil, "配置文件搜索路径 (可重复)")
 	fs.StringVar(&envPrefix, "env-prefix", "INTERVIEW_AI_", "环境变量前缀")
 	fs.BoolVarP(&verbose, "verbose", "v", false, "显示详细配置加载信息")
-	fs.BoolVar(&allowMissing, "allow-missing-config", false, "允许配置文件不存在")
+	fs.BoolVar(&allowMissing, "allow-missing-config", true, "允许配置文件不存在")
 
 	if err := fs.Parse(os.Args[1:]); err != nil {
 		return err
 	}
 
-	cfg, err := config.Load(config.Options{
+	// 保存配置选项，用于后续确定保存路径
+	configOpts := config.Options{
 		ConfigFiles:  cfgFiles,
 		SearchPaths:  searchPaths,
 		FlagSet:      fs,
 		EnvPrefix:    envPrefix,
 		Verbose:      verbose,
 		AllowMissing: allowMissing,
-	})
+	}
+
+	cfg, err := config.Load(configOpts)
 	if err != nil {
 		return err
 	}
@@ -85,7 +117,7 @@ func run() error {
 	}
 	defer container.Close()
 
-	gui := newGUI(container)
+	gui := newGUI(container, configOpts)
 	return gui.run()
 }
 
@@ -102,9 +134,11 @@ type guiApp struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 
-	interviewer binding.String
-	ai          binding.String
-	status      binding.String
+	interviewer    binding.String
+	ai             binding.String
+	aiMarkdown     *appwidgets.MarkdownViewer // Markdown 渲染器用于 AI 建议
+	status         binding.String
+	useMarkdown    bool // 是否使用 Markdown 渲染
 
 	captureMode   audio.CaptureMode
 	captureSelect *widget.Select
@@ -122,9 +156,12 @@ type guiApp struct {
 
 	textMu  sync.Mutex
 	session *state
+
+	// 配置选项，用于保存配置文件
+	configOpts config.Options
 }
 
-func newGUI(container *app.Container) *guiApp {
+func newGUI(container *app.Container, configOpts config.Options) *guiApp {
 	interviewer := binding.NewString()
 	_ = interviewer.Set("等待面试官提问…\n")
 
@@ -134,15 +171,22 @@ func newGUI(container *app.Container) *guiApp {
 	status := binding.NewString()
 	_ = status.Set("点击「启动语音识别」准备系统")
 
+	// 创建 Markdown 查看器
+	aiMarkdown := appwidgets.NewMarkdownViewer()
+	aiMarkdown.SetContent("点击「获取 AI 建议」按钮获取回答建议…")
+
 	return &guiApp{
 		container:   container,
 		cfg:         container.Config,
 		logger:      container.Logger.Named("gui"),
 		interviewer: interviewer,
 		ai:          ai,
+		aiMarkdown:  aiMarkdown,
 		status:      status,
 		captureMode: audio.CaptureModeBoth,
 		session:     &state{},
+		configOpts:  configOpts,
+		useMarkdown: true, // 默认启用 Markdown 渲染
 	}
 }
 
@@ -334,10 +378,17 @@ func (g *guiApp) buildMainContent() fyne.CanvasObject {
 		color.NRGBA{R: 59, G: 130, B: 246, A: 255},
 	)
 
-	// AI 建议区域 - 右侧
-	aiLabel := widget.NewLabelWithData(g.ai)
-	aiLabel.Wrapping = fyne.TextWrapWord
-	aiContent := container.NewVScroll(aiLabel)
+	// AI 建议区域 - 右侧（支持 Markdown 渲染）
+	var aiContent fyne.CanvasObject
+	if g.useMarkdown {
+		// 使用 Markdown 渲染器
+		aiContent = g.aiMarkdown
+	} else {
+		// 使用普通文本标签（fallback）
+		aiLabel := widget.NewLabelWithData(g.ai)
+		aiLabel.Wrapping = fyne.TextWrapWord
+		aiContent = container.NewVScroll(aiLabel)
+	}
 
 	aiCard := appwidgets.NewGradientCard(
 		"🤖 AI 建议",
@@ -582,7 +633,15 @@ func (g *guiApp) askAI() {
 		g.sidebarAskButton.Disable()
 	}
 	g.setStatus("AI 正在生成回答建议")
-	_ = g.ai.Set("💭 AI 正在思考…\n")
+
+	// 清空并设置初始提示
+	if g.useMarkdown {
+		g.runOnMain(func() {
+			g.aiMarkdown.SetContent("💭 **AI 正在思考…**\n\n")
+		})
+	} else {
+		_ = g.ai.Set("💭 AI 正在思考…\n")
+	}
 
 	go func() {
 		ctx, cancel := context.WithTimeout(g.ctxOrBackground(), 2*time.Minute)
@@ -592,18 +651,53 @@ func (g *guiApp) askAI() {
 		// Build complete prompt with conversation history
 		prompt := g.buildPromptWithHistory(question)
 
+		// 清空初始提示，准备接收 AI 回复
+		firstChunk := true
+
 		_, err := g.llmProvider.Assistant.StreamAndAppend(ctx, prompt, func(chunk string, done bool) error {
 			if chunk != "" {
-				g.appendBinding(g.ai, chunk)
+				if firstChunk {
+					// 第一个 chunk，清空初始提示并显示内容
+					firstChunk = false
+					if g.useMarkdown {
+						g.runOnMain(func() {
+							g.aiMarkdown.SetContent(chunk)
+						})
+					} else {
+						_ = g.ai.Set(chunk)
+					}
+				} else {
+					// 后续 chunk，追加内容
+					if g.useMarkdown {
+						g.runOnMain(func() {
+							g.aiMarkdown.AppendContent(chunk)
+						})
+					} else {
+						g.appendBinding(g.ai, chunk)
+					}
+				}
 			}
 			if done {
-				g.appendBinding(g.ai, "\n")
+				if g.useMarkdown {
+					g.runOnMain(func() {
+						g.aiMarkdown.AppendContent("\n")
+					})
+				} else {
+					g.appendBinding(g.ai, "\n")
+				}
 			}
 			return nil
 		})
 
 		if err != nil {
-			g.appendBinding(g.ai, fmt.Sprintf("\n❌ AI 生成失败: %v\n", err))
+			errorMsg := fmt.Sprintf("\n❌ **AI 生成失败**: %v\n", err)
+			if g.useMarkdown {
+				g.runOnMain(func() {
+					g.aiMarkdown.AppendContent(errorMsg)
+				})
+			} else {
+				g.appendBinding(g.ai, errorMsg)
+			}
 			g.logger.Error("AI 生成失败", zap.Error(err))
 			g.setStatus("AI 生成失败，请稍后重试")
 		} else {
@@ -656,7 +750,11 @@ func (g *guiApp) buildPromptWithHistory(currentQuestion types.ASRResult) string 
 func (g *guiApp) clear() {
 	g.runOnMain(func() {
 		_ = g.interviewer.Set("等待面试官提问…\n")
-		_ = g.ai.Set("点击「获取 AI 建议」按钮获取回答建议…\n")
+		if g.useMarkdown {
+			g.aiMarkdown.SetContent("点击「获取 AI 建议」按钮获取回答建议…")
+		} else {
+			_ = g.ai.Set("点击「获取 AI 建议」按钮获取回答建议…\n")
+		}
 	})
 	g.session.Reset()
 	g.setStatus("已清空历史记录")
@@ -869,10 +967,26 @@ func (g *guiApp) handleConfigUpdate(newConfig *config.Config) error {
 		return fmt.Errorf("配置验证失败: %w", err)
 	}
 
+	// 保存配置到文件
+	configPath := config.GetConfigPath(g.configOpts)
+	g.logger.Info("保存配置到文件", zap.String("path", configPath))
+
+	if err := config.Save(newConfig, config.SaveOptions{
+		FilePath:     configPath,
+		CreateBackup: true,
+		CreateDirs:   true,
+		BackupSuffix: ".backup",
+	}); err != nil {
+		g.logger.Error("保存配置文件失败", zap.Error(err))
+		return fmt.Errorf("保存配置文件失败: %w", err)
+	}
+
+	g.logger.Info("配置文件已保存", zap.String("path", configPath))
+
 	// 判断是否需要重启服务
 	needsRestart := g.configNeedsRestart(newConfig)
 
-	// 更新配置
+	// 更新内存中的配置
 	g.cfg = newConfig
 	g.container.Config = newConfig
 
@@ -881,7 +995,7 @@ func (g *guiApp) handleConfigUpdate(newConfig *config.Config) error {
 		g.runOnMain(func() {
 			dialog.ShowConfirm(
 				"需要重启服务",
-				"配置已更新,但需要重启语音识别服务才能生效。是否立即重启?",
+				"配置已保存并更新,但需要重启语音识别服务才能生效。是否立即重启?",
 				func(restart bool) {
 					if restart {
 						g.restartPipeline()
@@ -890,7 +1004,7 @@ func (g *guiApp) handleConfigUpdate(newConfig *config.Config) error {
 				g.window,
 			)
 		})
-		g.setStatus("配置已更新,请重启语音识别服务使其生效")
+		g.setStatus("配置已保存并更新,请重启语音识别服务使其生效")
 	} else {
 		// 立即生效的配置更新
 		if g.llmProvider != nil {
@@ -904,7 +1018,7 @@ func (g *guiApp) handleConfigUpdate(newConfig *config.Config) error {
 			g.logger.Info("LLM 提供商已更新")
 		}
 
-		g.setStatus("配置已更新并生效")
+		g.setStatus("配置已保存并生效")
 	}
 
 	return nil
