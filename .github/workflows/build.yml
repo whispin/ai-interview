@@ -1,0 +1,165 @@
+name: Build Cross-Platform GUI
+
+on:
+  push:
+    branches: [main, master]
+    tags: ['v*']
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build ${{ matrix.platform }}
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Windows Build
+          - platform: Windows
+            os: windows-latest
+            goos: windows
+            goarch: amd64
+            binary_name: interview.exe
+            build_flags: '-ldflags "-H windowsgui -s -w"'
+            artifact_name: interview-windows-amd64
+
+          # macOS Build (Intel)
+          - platform: macOS-Intel
+            os: macos-latest
+            goos: darwin
+            goarch: amd64
+            binary_name: interview-darwin-amd64
+            build_flags: '-ldflags "-s -w"'
+            artifact_name: interview-macos-intel
+
+          # macOS Build (Apple Silicon)
+          - platform: macOS-ARM
+            os: macos-latest
+            goos: darwin
+            goarch: arm64
+            binary_name: interview-darwin-arm64
+            build_flags: '-ldflags "-s -w"'
+            artifact_name: interview-macos-apple-silicon
+
+          # Linux Build
+          - platform: Linux
+            os: ubuntu-latest
+            goos: linux
+            goarch: amd64
+            binary_name: interview-linux-amd64
+            build_flags: '-ldflags "-s -w"'
+            artifact_name: interview-linux-amd64
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+          cache: true
+          cache-dependency-path: go.sum
+
+      # Platform-specific dependencies
+      - name: Install Linux dependencies
+        if: matrix.platform == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libgl1-mesa-dev \
+            xorg-dev \
+            libx11-dev \
+            libxcursor-dev \
+            libxrandr-dev \
+            libxinerama-dev \
+            libxi-dev \
+            libxxf86vm-dev \
+            gcc
+
+      - name: Install macOS dependencies
+        if: startsWith(matrix.platform, 'macOS')
+        run: |
+          # Fyne dependencies are mostly included with Xcode Command Line Tools
+          # which is pre-installed on GitHub runners
+          echo "macOS dependencies ready"
+
+      # Build step
+      - name: Build GUI application
+        env:
+          CGO_ENABLED: 1
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        shell: bash
+        run: |
+          echo "Building for ${{ matrix.platform }}..."
+
+          # Windows uses different build command due to flag syntax
+          if [ "${{ matrix.platform }}" = "Windows" ]; then
+            go build -ldflags "-H windowsgui -s -w" -o ${{ matrix.binary_name }} cmd/gui/main.go
+          else
+            go build -ldflags "-s -w" -o ${{ matrix.binary_name }} cmd/gui/main.go
+          fi
+
+          echo "Build completed successfully"
+          ls -lh ${{ matrix.binary_name }}
+
+      # Verify build
+      - name: Verify binary
+        shell: bash
+        run: |
+          if [ ! -f "${{ matrix.binary_name }}" ]; then
+            echo "Error: Binary not found!"
+            exit 1
+          fi
+
+          echo "Binary size:"
+          ls -lh ${{ matrix.binary_name }}
+
+          echo "Binary info:"
+          file ${{ matrix.binary_name }} || true
+
+      # Upload artifacts
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: ${{ matrix.binary_name }}
+          retention-days: 30
+          if-no-files-found: error
+
+  # Optional: Create release when tagged
+  release:
+    name: Create Release
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Display structure
+        run: ls -R artifacts
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+          files: |
+            artifacts/**/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
